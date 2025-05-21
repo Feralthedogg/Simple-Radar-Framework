@@ -80,9 +80,9 @@ omega = -0.03                           # Target turn rate (rad/s)
 intercept_point = None
 intercept_time = None
 
-for step in range(int(max_time / dt)):
-    t = step * dt
-
+# step 기반 for => 시간 누적 while
+t = 0.0  # 수정: 누적 경과시간 변수
+while t < max_time:
     # Generate noisy measurement
     rel_true = pos_t - pos_m
     R_true = np.linalg.norm(rel_true)
@@ -109,6 +109,7 @@ for step in range(int(max_time / dt)):
         traj_t.append(pos_t.copy())
         pos_t += vel_t * dt
         los_prev = rel_true / R_true
+        t += dt  # 수정: 누적 시간 증가
         continue
 
     # Lead pursuit / state estimate
@@ -157,11 +158,9 @@ for step in range(int(max_time / dt)):
     if t >= omega_start:
         theta = omega * dt
         c_t, s_t = np.cos(theta), np.sin(theta)
-        # vel_t is 3-element [vx, vy, vz]
         vx, vy, _ = vel_t
         vel_t[0] = vx * c_t - vy * s_t
         vel_t[1] = vx * s_t + vy * c_t
-        # vel_t[2] stays zero
 
     # Update target position
     pos_t += vel_t * dt
@@ -170,17 +169,19 @@ for step in range(int(max_time / dt)):
     traj_t.append(pos_t.copy())
     los_prev = los.copy()
 
-    # Optionally tighten control loop in endgame
+    # Endgame: tighten control loop
     if dist < R_switch and dt > 0.01:
         dt = 0.01
 
-    # Check intercept (0~10 m 이내)
+    # Check intercept
     if np.linalg.norm(pos_m - pos_t) <= intercept_radius:
         intercept_point = pos_t.copy()
         intercept_time = t
         logging.info(f"*** Intercept at t={t:.1f}s ***")
         print("Target Destroyed")
         break
+    # 수정: 누적 시간 증가
+    t += dt
 else:
     logging.info("Missed the target.")
     print("Miss the Target")
