@@ -6,4 +6,10 @@ venv/
 __pycache__/
 *.log
 
+radar_framework/__pycache__/
+radar_framework/core/__pycache__/
+radar_framework/manager/__pycache__/
+radar_framework/scheduler/__pycache__/
+
 .idea/
+.DS_Store
