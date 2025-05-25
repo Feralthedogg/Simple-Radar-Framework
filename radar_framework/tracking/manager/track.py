@@ -1,3 +1,5 @@
+# radar_framework/tracking/manager/track.py
+
 class Track3D:
     """Represents one track with hit/miss counters and status."""
     def __init__(self, filt, track_id, confirm_thr):

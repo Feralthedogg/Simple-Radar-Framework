@@ -1,3 +1,5 @@
+# radar_framework/tracking/__init__.py
+
 # --- Core models & filters ---
 from .core.models        import RadarParams3D, RadarModel3D
 from .core.filters       import EKF3DParams, EKF3D

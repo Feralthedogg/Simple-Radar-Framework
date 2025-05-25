@@ -1,11 +1,13 @@
-from radar_framework.core.models import RadarParams3D, RadarModel3D
-from radar_framework.core.filters import EKF3DParams, EKF3D
-from radar_framework.core.imm import IMM3DParams, IMM3D
-from radar_framework.core.sensor_fusion import SensorFusion
-from radar_framework.manager.track_manager import ManagerParams3D, TrackManager3D
-from radar_framework.scheduler.beam_scheduler import SchedulerParams3D, BeamScheduler3D
-from radar_framework.exceptions import RadarFrameworkError
-from radar_framework.manager.logger import logger
+# radar_framework/tracking/pipeline.py
+
+from radar_framework.tracking.core.models import RadarParams3D, RadarModel3D
+from radar_framework.tracking.core.filters import EKF3DParams, EKF3D
+from radar_framework.tracking.core.imm import IMM3DParams, IMM3D
+from radar_framework.tracking.core.sensor_fusion import SensorFusion
+from radar_framework.tracking.manager.track_manager import ManagerParams3D, TrackManager3D
+from radar_framework.tracking.scheduler.beam_scheduler import SchedulerParams3D, BeamScheduler3D
+from radar_framework.tracking.exceptions import RadarFrameworkError
+from radar_framework.tracking.manager.logger import logger
 
 class TrackingPipeline3D:
     """

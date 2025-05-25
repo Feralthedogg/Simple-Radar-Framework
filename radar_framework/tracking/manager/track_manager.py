@@ -1,10 +1,12 @@
+# radar_framework/tracking/manager/track_manager.py
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from dataclasses import dataclass
 
-from radar_framework.exceptions import RadarFrameworkError
-from radar_framework.manager.logger import logger
-from radar_framework.manager.track import Track3D
+from radar_framework.tracking.exceptions import RadarFrameworkError
+from radar_framework.tracking.manager.logger import logger
+from radar_framework.tracking.manager.track import Track3D
 
 @dataclass
 class ManagerParams3D:
