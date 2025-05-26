@@ -1,30 +1,42 @@
 # Simple Radar Framework
 
-A Python framework for simulating and managing 3D AESA radar processing and multi-target tracking using EKF or IMM filters, sensor fusion, track management, and beam scheduling.
+A Python framework for simulating and managing 3D AESA and PESA radar processing, multi-target tracking using EKF or IMM filters, sensor fusion, track management, beam scheduling, and guidance simulation.
 
 ---
 
 ## Features
 
-- **AESA Front-End**  
-  - Configurable element geometry  
-  - Field-of-view limits (azimuth & elevation)  
-  - Digital beamforming (MVDR)  
-  - Pulse compression (matched filtering of LFM waveforms)  
-  - CFAR detection  
-  - Optional JPDA / MHT association engines  
+* **AESA Front-End**
 
-- **Tracking Back-End**  
-  - 3D constant-velocity EKF or IMM  
-  - Gating, assignment (Hungarian), JPDA/MHT  
-  - Track management: confirmation, deletion, spawning  
-  - Optional sensor fusion of confirmed tracks  
-  - Beam scheduler that prioritizes confirmed tracks  
+  * Configurable element geometry
+  * Field-of-view limits (azimuth & elevation)
+  * Digital beamforming (MVDR)
+  * Pulse compression (matched filtering of LFM waveforms)
+  * CFAR detection
+  * Optional JPDA / MHT association engines
 
-- **Guidance Simulation**  
-  - Proportional navigation with dynamic navigation constant  
-  - Pure-pursuit switch in terminal phase  
-  - Detailed logging of range, NAV constant, lateral acceleration  
+* **PESA Front-End**
+
+  * Phase-quantized steering weights
+  * Subarray beamforming
+  * Phase calibration (gain/phase mismatch correction)
+  * STAP & pulse compression via AESA core
+  * Diversity receive combining
+  * EKF-based channel state estimation
+
+* **Tracking Back-End**
+
+  * 3D constant-velocity EKF or IMM
+  * Gating, assignment (Hungarian), JPDA/MHT
+  * Track management: confirmation, deletion, spawning
+  * Optional sensor fusion of confirmed tracks
+  * Beam scheduler that prioritizes confirmed tracks
+
+* **Guidance Simulation**
+
+  * Proportional navigation with dynamic navigation constant
+  * Pure-pursuit switch in terminal phase
+  * Detailed logging of range, NAV constant, lateral acceleration
 
 ---
 
@@ -34,7 +46,7 @@ A Python framework for simulating and managing 3D AESA radar processing and mult
 pip install numpy scipy
 # (optional) for plotting
 pip install matplotlib
-````
+```
 
 ---
 
@@ -82,7 +94,43 @@ out = aesa.process(X, theta, el, window)
 # out['beamformed'], out['pulse_compressed'], out['association']
 ```
 
-### 2) Tracking Pipeline
+### 2) PESA Pipeline
+
+```python
+from radar_framework.radar.PESA import PESPAPipeline, PESAParams
+import numpy as np
+
+# 16-element ULA with 0.5 m spacing
+M = 16
+element_positions = np.stack([
+    np.linspace(-(M-1)/2, (M-1)/2, M),
+    np.zeros(M),
+    np.zeros(M)
+], axis=1) * 0.5
+
+params = PESAParams(
+    wavelength=0.03,
+    element_positions=element_positions,
+    delta_phi=np.deg2rad(5),   # phase quant. step
+    subarray_size=4,            # elements per subarray
+    B=1e6,
+    T_p=1e-3,
+    P_fa=1e-6
+)
+
+pesa = PESPAPipeline(params=params)
+
+# On each scan:
+a = ...           # steering vector from AESA core
+phases = np.angle(a)
+# r: flattened complex returns
+r = X.flatten()
+out = pesa.process(phases=phases, theta=theta, r=r)
+
+# out['weights'], out['af'], out['pulse_compressed'], out['stap'], out['diversity'], out['ekf']
+```
+
+### 3) Tracking Pipeline
 
 ```python
 from radar_framework.tracking import (
@@ -92,92 +140,20 @@ from radar_framework.tracking import (
 )
 import numpy as np
 
-# Radar model parameters
-radar_params = RadarParams3D(
-    Pt=1e3, G=30, wavelength=0.03, sigma_max=1,
-    k=1.38e-23, T_noise=290, B=1e6,
-    P_clutter=1e-3, P_int=1e-3,
-    sigma_az=0.01, sigma_el=0.01,
-    SNR_th=5.0
-)
-
-# EKF parameters
-ekf_params = EKF3DParams(
-    dt=0.1,
-    process_noise_std=5.0,
-    meas_noise_std=(100.0, 0.01)
-)
-
-# Track manager parameters
-P0 = np.eye(6) * 1e6
-manager_params = ManagerParams3D(
-    P0=P0, snr_th=5.0,
-    miss_limit=3, gate_chi2=7.815,
-    confirm_thr=2
-)
-
-# Beam scheduler defaults
-scheduler_params = SchedulerParams3D(
-    default_beams=[(0.0, 0.0), (0.4, 0.1)]
-)
-
-pipeline = TrackingPipeline3D(
-    radar_params=radar_params,
-    ekf_params=ekf_params,
-    fusion=False,
-    manager_params=manager_params,
-    scheduler_params=scheduler_params
-)
-
-# Run one step
-measurements = [ [r1, az1, el1], … ]
-true_states  = [ np.array([x,vx,y,vy,z,vz]), … ]
-tracks, beam_angle = pipeline.step(measurements, true_states, T_int=0.1)
-
-print(f"Beam → az: {beam_angle[0]:.2f}, el: {beam_angle[1]:.2f}")
-for tr in tracks:
-    print(f"Track {tr.id}: status={tr.status}, state={tr.filter.x}")
+# ... (same as AESA section) ...
 ```
 
 ---
 
 ## Example: Missile Engagement Simulation
 
-See `simulation.py` for a full end-to-end demo:
-
-* AESA scanning within ±60°/±30° FOV
-* CFAR to generate measurements
-* EKF tracking, beam scheduling
-* Proportional navigation guidance
-* Detailed `logging.info(...)` of lock, range, NAV constant, lateral accel
-
-Run:
+See `simulation.py` for full AESA & PESA demos:
 
 ```bash
 python simulation.py
 ```
 
-You’ll see log lines like:
-
-```
-2025-05-25 22:25:45,588 [INFO] root: t=15.0s: awaiting lock until t=15.0s
-2025-05-25 22:25:45,589 [INFO] root: t=15.1s: dist=80236.9 m, N_dyn=4.0, aN=27.6
-2025-05-25 22:25:45,589 [INFO] root: t=15.2s: dist=80109.8 m, N_dyn=4.0, aN=1.0
-...
-2025-05-25 22:25:45,944 [INFO] root: t=92.4s: dist=17.2 m, N_dyn=11.9, aN=-490.5
-2025-05-25 22:25:45,944 [INFO] root: *** Intercept at t=92.4s ***
-Target Destroyed
-```
-
-And a matplotlib plot of the missile & target trajectories.
-
----
-
-## Extensibility
-
-* Swap in `IMM3DParams` / IMM3D for maneuvering targets
-* Turn on `fusion=True` to fuse confirmed tracks
-* Tweak FOV, thresholds, noise specs via dataclasses
+Logs and plots will show separate AESA-only and PESA-only engagements with intercept markers.
 
 ---
 
@@ -189,5 +165,6 @@ And a matplotlib plot of the missile & target trajectories.
 
 ## Future Extensions
 
-- **PESA Radar** support (Passive Electronically Scanned Array)  
-- **Mechanically Scanned** (conventional) radar processing  
+* Support for mechanically scanned radars
+
+---
