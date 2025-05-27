@@ -3,51 +3,51 @@
 import numpy as np
 
 from radar_framework.radar.AESA import exceptions
+from radar_framework.radar.AESA.utils import AssociationEngine
 
-class JPDA:
+class JPDA(AssociationEngine):
     """
-    Joint Probabilistic Data Association (JPDA) engine.
+    Joint Probabilistic Data Association engine.
     Computes association probabilities for tracks and measurements.
     """
-    def __init__(self, gate_threshold, Pd, clutter_rate):
-        self.gate_threshold = gate_threshold  # chi-square gating threshold
-        self.Pd = Pd                           # detection probability
-        self.lambda_c = clutter_rate          # spatial clutter rate
+    def __init__(self, gate_threshold: float, Pd: float, lambda_c: float):
+        super().__init__(gate_threshold, Pd, lambda_c)
 
     def gate(self, track, measurements, H, R):
-        """Return list of measurements within gate for a single track."""
+        """
+        Return list of measurement indices within the chi-square gate for a single track.
+        """
         try:
-            gated = []
             x = track.filter.x
             S = H @ track.filter.P @ H.T + R
             invS = np.linalg.inv(S)
+            gated = []
             for j, z in enumerate(measurements):
                 v = z - H @ x
+                # normalize the angular component
                 v[1] = (v[1] + np.pi) % (2 * np.pi) - np.pi
                 dist2 = float(v.T @ invS @ v)
                 if dist2 <= self.gate_threshold:
                     gated.append(j)
             return gated
-        except AttributeError as e:
-            raise exceptions.AESAError(f"JPDA gate: invalid track or measurement data: {e}")
         except np.linalg.LinAlgError as e:
-            raise exceptions.AESAError(f"JPDA gate: matrix inversion failed: {e}")
+            raise exceptions.AESAError(f"JPDA gate linear algebra error: {e}")
+        except AttributeError as e:
+            raise exceptions.AESAError(f"JPDA gate attribute error: {e}")
         except Exception as e:
             raise exceptions.AESAError(f"JPDA gate unexpected error: {e}")
 
     def associate(self, tracks, measurements, Hs, Rs):
         """
-        Build association events and compute beta_ij probabilities.
-        Hs, Rs: lists of H, R for each track
-        Returns betas: list of arrays, one per track.
+        Build joint association hypotheses and compute beta_ij probabilities.
+        Returns a list of beta arrays, one per track (last element is missed detection).
         """
         try:
-            Ntr = len(tracks)
-            Nme = len(measurements)
-            # Gating
-            gated_indices = [self.gate(tr, measurements, Hs[i], Rs[i])
-                             for i, tr in enumerate(tracks)]
-            # Generate all joint association hypotheses
+            Ntr, Nme = len(tracks), len(measurements)
+            # 1) Perform gating for each track
+            gated_indices = [self.gate(tracks[i], measurements, Hs[i], Rs[i])
+                             for i in range(Ntr)]
+            # 2) Generate all joint hypotheses recursively
             hyps = []
             def recurse(i, assignment):
                 if i == Ntr:
@@ -59,12 +59,14 @@ class JPDA:
                     assignment[i] = m
                     recurse(i + 1, assignment)
             recurse(0, {})
-            # Compute likelihood for each hypothesis
+
+            # 3) Compute likelihood L(h) for each hypothesis
             L = np.zeros(len(hyps))
             for h, ass in enumerate(hyps):
                 Lh = 1.0
                 for i, m in ass.items():
                     if m is None:
+                        # missed detection
                         Lh *= (1 - self.Pd)
                     else:
                         H, R = Hs[i], Rs[i]
@@ -72,24 +74,30 @@ class JPDA:
                         z_pred = H @ tracks[i].filter.x
                         v = z - z_pred
                         S = H @ tracks[i].filter.P @ H.T + R
-                        Lh *= self.Pd * np.exp(-0.5 * (v.T @ np.linalg.inv(S) @ v))
-                        Lh /= np.sqrt((2 * np.pi) ** len(v) * np.linalg.det(S))
-                # clutter term
+                        invS = np.linalg.inv(S)
+                        exponent = np.exp(-0.5 * (v.T @ invS @ v))
+                        norm = np.sqrt((2 * np.pi) ** len(v) * np.linalg.det(S))
+                        Lh *= self.Pd * exponent / norm
+                # include clutter term for each assigned measurement
                 count = sum(1 for m in ass.values() if m is not None)
-                Lh *= (self.lambda_c) ** count
+                Lh *= (self.lambda_c ** count)
                 L[h] = Lh
+
+            # 4) Normalize to get hypothesis probabilities
             Lsum = np.sum(L)
-            probs = (L / Lsum) if Lsum > 0 else L
-            # Compute beta_ij per track
+            probs = L / Lsum if Lsum > 0 else L
+
+            # 5) Compute beta_ij for each track i and measurement j (plus miss)
             betas = []
             for i in range(Ntr):
-                beta_i = np.zeros(Nme + 1)  # last element for miss
+                beta_i = np.zeros(Nme + 1)
                 for h, ass in enumerate(hyps):
                     idx = ass[i] if ass[i] is not None else Nme
                     beta_i[idx] += probs[h]
                 betas.append(beta_i)
+
             return betas
-        except exceptions.AESAError:
-            raise
+        except np.linalg.LinAlgError as e:
+            raise exceptions.AESAError(f"JPDA association linear algebra error: {e}")
         except Exception as e:
-            raise exceptions.AESAError(f"JPDA associate unexpected error: {e}")
+            raise exceptions.AESAError(f"JPDA association unexpected error: {e}")
