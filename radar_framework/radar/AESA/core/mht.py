@@ -3,6 +3,13 @@
 import numpy as np
 
 from radar_framework.radar.AESA import exceptions
+from radar_framework.radar.AESA.utils.validation import (
+    assert_ndarray,
+    assert_list,
+    assert_list_length,
+    assert_list_of_ndarray,
+    assert_square_matrix
+)
 from radar_framework.radar.AESA.utils import AssociationEngine
 from .jpda import JPDA
 
@@ -16,10 +23,20 @@ class MHT(AssociationEngine):
         self.max_hypotheses = max_hypotheses
         self.hypothesis_tree = []
 
-    def gate(self, track, measurements, H, R):
+    def gate(self, track, measurements: np.ndarray, H: np.ndarray, R: np.ndarray) -> list:
         """
         Reuse JPDA gate method for hypothesis generation.
         """
+        # Input validation
+        if not hasattr(track, 'filter') or not hasattr(track.filter, 'x'):
+            raise exceptions.AESAError("track must have 'filter.x' attribute")
+        assert_ndarray(measurements, 'measurements', 2)
+        assert_ndarray(H, 'H', 2)
+        assert_square_matrix(R, 'R')
+        M, N = measurements.shape[1], track.filter.x.shape[0]
+        if H.shape != (M, N):
+            raise exceptions.AESAError(f"H must have shape ({M},{N}), got {H.shape}")
+
         try:
             return JPDA(self.gate_threshold, self.Pd, self.lambda_c).gate(track, measurements, H, R)
         except exceptions.AESAError:
@@ -28,10 +45,23 @@ class MHT(AssociationEngine):
         except Exception as e:
             raise exceptions.AESAError(f"MHT gate error: {e}")
 
-    def associate(self, tracks, measurements, Hs, Rs):
+    def associate(self, tracks: list, measurements: list, Hs: list, Rs: list) -> list:
         """
         Alias for update to conform to AssociationEngine API.
         """
+        # Input validation
+        assert_list(tracks, 'tracks')
+        assert_list(measurements, 'measurements')
+        assert_list(Hs, 'Hs')
+        assert_list(Rs, 'Rs')
+        n = len(tracks)
+        assert_list_length(Hs, 'Hs', n)
+        assert_list_length(Rs, 'Rs', n)
+        # Validate each H and R
+        assert_list_of_ndarray(Hs, 'Hs', 2)
+        for i in range(n):
+            assert_square_matrix(Rs[i], f'Rs[{i}]')
+
         try:
             return self.update(tracks, measurements, Hs, Rs)
         except exceptions.AESAError:
@@ -39,11 +69,23 @@ class MHT(AssociationEngine):
         except Exception as e:
             raise exceptions.AESAError(f"MHT associate error: {e}")
 
-    def update(self, tracks, measurements, Hs, Rs):
+    def update(self, tracks: list, measurements: list, Hs: list, Rs: list) -> list:
         """
         Generate and prune hypotheses, then apply the best assignment.
         Returns the updated hypothesis tree.
         """
+        # Input validation
+        assert_list(tracks, 'tracks')
+        assert_list(measurements, 'measurements')
+        assert_list(Hs, 'Hs')
+        assert_list(Rs, 'Rs')
+        n = len(tracks)
+        assert_list_length(Hs, 'Hs', n)
+        assert_list_length(Rs, 'Rs', n)
+        assert_list_of_ndarray(Hs, 'Hs', 2)
+        for i in range(n):
+            assert_square_matrix(Rs[i], f'Rs[{i}]')
+
         try:
             # 1) Expand hypotheses from existing tree
             new_hyps = []
@@ -52,7 +94,7 @@ class MHT(AssociationEngine):
                 gated = {i: self.gate(tr, measurements, Hs[i], Rs[i])
                          for i, tr in enumerate(tracks)}
                 def recurse(i, assignment):
-                    if i == len(tracks):
+                    if i == n:
                         new_hyps.append({**parent, **assignment})
                         return
                     for m in gated[i] + [None]:

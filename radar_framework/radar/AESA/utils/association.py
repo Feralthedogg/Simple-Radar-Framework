@@ -4,6 +4,13 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 from radar_framework.radar.AESA import exceptions
+from radar_framework.radar.AESA.utils.validation import (
+    assert_ndarray,
+    assert_shape,
+    assert_list,
+    assert_list_length,
+    assert_list_of_ndarray,
+)
 
 class AssociationEngine(ABC):
     """
@@ -19,6 +26,15 @@ class AssociationEngine(ABC):
         """
         Return a list of measurement indices that pass the gate for the given track.
         """
+        # Input validation
+        if not hasattr(track, 'filter') or not hasattr(track.filter, 'x'):
+            raise exceptions.AESAError("track must have 'filter.x' attribute")
+        assert_ndarray(measurements, "measurements", 2)
+        M = measurements.shape[1]
+        N = track.filter.x.shape[0]
+        assert_shape(H, "H", (M, N))
+        assert_shape(R, "R", (M, M))
+
         try:
             gated = []
             x = track.filter.x
@@ -46,6 +62,18 @@ class AssociationEngine(ABC):
         Perform association: JPDA returns association probabilities (betas),
         MHT returns or updates hypothesis tree and applies the best hypothesis.
         """
+        # Input validation
+        assert_list(tracks, "tracks")
+        assert_list(measurements, "measurements")
+        assert_list_of_ndarray(measurements, "measurements", 1)
+        assert_list(Hs, "Hs")
+        assert_list(Rs, "Rs")
+        n = len(tracks)
+        assert_list_length(Hs, "Hs", n)
+        assert_list_length(Rs, "Rs", n)
+        assert_list_of_ndarray(Hs, "Hs", 2)
+        assert_list_of_ndarray(Rs, "Rs", 2)
+
         try:
             # Concrete implementations must override this method
             raise NotImplementedError
